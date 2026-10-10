@@ -1,4 +1,6 @@
-﻿from fastapi import FastAPI
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.routes.claims import router as claims_router
 from backend.app.api.routes.cover import router as cover_router
@@ -13,6 +15,19 @@ app = FastAPI(
     description="Micro-savings and personalized micro-insurance backend",
     version="1.0.0",
 )
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_URL", "").split(",")
+    if origin.strip()
+]
+if allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
 
 app.include_router(premium_router)
 app.include_router(onboarding_router)

@@ -8,7 +8,16 @@ function Onboarding({ onComplete }) {
     income: "",
     goal: "",
     protection: "",
+    occupation: "",
+    city: "",
+    workHours: "8",
+    previousClaims: "0",
+    incomeStability: "0.65",
   });
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [apiResult, setApiResult] = useState(null);
 
   const updateForm = (field, value) => {
     setFormData((previous) => ({
@@ -29,9 +38,96 @@ function Onboarding({ onComplete }) {
     }
   };
 
-  const handleComplete = () => {
-    if (onComplete) {
-      onComplete();
+  const handleComplete = async () => {
+    // After displaying the real result, the next click continues to the app.
+    if (apiResult) {
+      if (onComplete) onComplete(apiResult);
+      return;
+    }
+
+    const incomeMidpoints = {
+      "below-15000": 11500,
+      "15000-30000": 22500,
+      "30000-50000": 40000,
+      "50000-100000": 75000,
+      "above-100000": 110000,
+    };
+
+    if (
+      !formData.name.trim() ||
+      !formData.income ||
+      !formData.occupation ||
+      !formData.city.trim() ||
+      !formData.workHours ||
+      !formData.previousClaims.trim() ||
+      !formData.incomeStability
+    ) {
+      setError("Please complete all required profile fields.");
+      return;
+    }
+
+    const monthlyIncome = incomeMidpoints[formData.income];
+    const hours = Number(formData.workHours);
+    const claims = Number(formData.previousClaims);
+    const stability = Number(formData.incomeStability);
+
+    if (
+      !monthlyIncome ||
+      !Number.isFinite(hours) || hours < 1 || hours > 24 ||
+      !Number.isInteger(claims) || claims < 0 ||
+      !Number.isFinite(stability) || stability < 0 || stability > 1
+    ) {
+      setError("Please check your income, working hours, claims, and stability.");
+      return;
+    }
+
+    const apiBase = import.meta.env.VITE_API_URL;
+    if (!apiBase) {
+      setError("API URL is not configured. Set VITE_API_URL and rebuild the frontend.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${apiBase.replace(/\/$/, "")}/onboarding/profile`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: `rupee-${Date.now()}`,
+            name: formData.name.trim(),
+            occupation: formData.occupation,
+            city: formData.city.trim(),
+            monthly_income: monthlyIncome,
+            income_stability: stability,
+            work_hours_per_day: hours,
+            // The backend recalculates these from city and occupation.
+            city_risk: 0,
+            occupation_risk: 0,
+            previous_claims: claims,
+          }),
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const detail = data.detail
+          ? (typeof data.detail === "string"
+              ? data.detail
+              : JSON.stringify(data.detail))
+          : `Request failed (${response.status})`;
+        throw new Error(detail);
+      }
+
+      setApiResult(data);
+    } catch (err) {
+      setError(err.message || "Could not connect to Rupee+. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -453,15 +549,59 @@ function Onboarding({ onComplete }) {
                 />
               </div>
 
+              <div className="field">
+                <label htmlFor="occupation">Occupation</label>
+                <select
+                  id="occupation"
+                  value={formData.occupation}
+                  onChange={(event) =>
+                    updateForm("occupation", event.target.value)
+                  }
+                >
+                  <option value="">Select occupation</option>
+                  <option value="delivery rider">Delivery rider</option>
+                  <option value="driver">Driver</option>
+                  <option value="construction worker">Construction worker</option>
+                  <option value="factory worker">Factory worker</option>
+                  <option value="security guard">Security guard</option>
+                  <option value="domestic worker">Domestic worker</option>
+                  <option value="street vendor">Street vendor</option>
+                  <option value="shop worker">Shop worker</option>
+                  <option value="freelancer">Freelancer</option>
+                  <option value="office worker">Office worker</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+              </div>
+
+              <div className="field">
+                <label htmlFor="city">City</label>
+                <input
+                  id="city"
+                  type="text"
+                  placeholder="Enter your city"
+                  value={formData.city}
+                  onChange={(event) =>
+                    updateForm("city", event.target.value)
+                  }
+                />
+              </div>
+
               <div className="button-row">
                 <div />
 
                 <button
                   className="next-button"
                   onClick={nextStep}
-                  disabled={!formData.name.trim()}
+                  disabled={
+                    !formData.name.trim() ||
+                    !formData.occupation ||
+                    !formData.city.trim()
+                  }
                   style={{
-                    opacity: formData.name.trim() ? 1 : 0.5,
+                    opacity:
+                      formData.name.trim() &&
+                      formData.occupation &&
+                      formData.city.trim() ? 1 : 0.5,
                   }}
                 >
                   Continue →
@@ -757,6 +897,53 @@ function Onboarding({ onComplete }) {
                 </p>
               </div>
 
+              <div className="field">
+                <label htmlFor="workHours">Average working hours per day</label>
+                <input
+                  id="workHours"
+                  type="number"
+                  min="1"
+                  max="24"
+                  value={formData.workHours}
+                  onChange={(event) =>
+                    updateForm("workHours", event.target.value)
+                  }
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="previousClaims">Previous insurance claims</label>
+                <input
+                  id="previousClaims"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={formData.previousClaims}
+                  onChange={(event) =>
+                    updateForm("previousClaims", event.target.value)
+                  }
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="incomeStability">
+                  Income stability (0 = variable, 1 = very stable)
+                </label>
+                <select
+                  id="incomeStability"
+                  value={formData.incomeStability}
+                  onChange={(event) =>
+                    updateForm("incomeStability", event.target.value)
+                  }
+                >
+                  <option value="0.25">Very variable</option>
+                  <option value="0.45">Somewhat variable</option>
+                  <option value="0.65">Moderately stable</option>
+                  <option value="0.8">Mostly stable</option>
+                  <option value="0.95">Very stable</option>
+                </select>
+              </div>
+
               <div className="summary">
 
                 <div className="summary-title">
@@ -793,6 +980,39 @@ function Onboarding({ onComplete }) {
 
               </div>
 
+              {error && (
+                <p role="alert" style={{ color: "#b42318" }}>
+                  {error}
+                </p>
+              )}
+
+              {apiResult && (
+                <div className="protection-box" aria-live="polite">
+                  <div className="protection-box-title">
+                    Your calculated Rupee+ profile
+                  </div>
+                  <p>Risk score: {apiResult.risk_score}</p>
+                  <p>Risk level: {apiResult.risk_level}</p>
+                  <p>
+                    Monthly premium: ₹
+                    {Number(apiResult.monthly_premium).toFixed(2)}
+                  </p>
+                  <p>
+                    Insurance allocation: ₹
+                    {Number(apiResult.insurance_allocation).toFixed(2)}
+                  </p>
+                  <p>
+                    Savings allocation: ₹
+                    {Number(apiResult.savings_allocation).toFixed(2)}
+                  </p>
+                  <p>{apiResult.message}</p>
+                  <p>
+                    Income ranges use representative amounts, not your exact income.
+                    This estimate is not an insurance purchase or policy activation.
+                  </p>
+                </div>
+              )}
+
               <div className="button-row">
 
                 <button
@@ -805,13 +1025,11 @@ function Onboarding({ onComplete }) {
                 <button
                   className="next-button"
                   onClick={handleComplete}
-                  disabled={!formData.protection}
+                  disabled={loading || (!formData.protection && !apiResult)}
                   style={{
-                    opacity: formData.protection ? 1 : 0.5,
+                    opacity: loading ? 0.7 : 1,
                   }}
-                >
-                  Enter Rupee+ →
-                </button>
+                >{loading ? "Calculating..." : apiResult ? "Continue to dashboard" : "Calculate my profile"}</button>
 
               </div>
             </>
